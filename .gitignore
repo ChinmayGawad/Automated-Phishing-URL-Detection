@@ -1,0 +1,51 @@
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Test and coverage outputs
+.pytest_cache/
+.coverage
+htmlcov/
+.coverage.*
+*.cover
+
+# Jupyter / notebooks
+.ipynb_checkpoints/
+
+# Packaging / build artifacts
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Model and data artifacts
+models/*.pt
+models/*.joblib
+data/screenshots/_live/*
+data/screenshots/phish/*
+data/screenshots/legit/*
+data/raw/*
+!data/raw/.gitkeep
+!data/screenshots/.gitkeep
+!data/screenshots/_live/.gitkeep
+!data/screenshots/legit/.gitkeep
+!data/screenshots/phish/.gitkeep
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE/editor files
+.vscode/
+.idea/
+
+# Logs
+*.log
