@@ -2,19 +2,24 @@
 
 Implements the three-stage routing described in the project architecture:
 
-1. Compute the fast lexical score.
-2. If it is extremely confident, short-circuit with a fast-path verdict.
-3. Otherwise (ambiguous/suspicious), run the visual engine and fuse the two
+1. **Whitelist check**: If the domain is a known legitimate site, return
+   Safe immediately (most reliable signal).
+2. Compute the fast lexical score.
+3. If it is extremely confident, short-circuit with a fast-path verdict.
+4. Otherwise (ambiguous/suspicious), run the visual engine and fuse the two
    scores with configurable weights into a final risk in [0, 1].
 """
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Optional
+from urllib.parse import urlparse
 
 from .config import DEFAULT_CONFIG, HybridConfig
 
+from ..lexical.features import KNOWN_LEGITIMATE_DOMAINS
 from ..lexical.model import LexicalModel
 from ..vision.capture import capture
 from ..vision.model import VisionModel
@@ -47,12 +52,44 @@ def _verdict_from_risk(risk: float, cfg: HybridConfig) -> str:
     return "Suspicious"
 
 
+def _check_whitelist(url: str) -> bool:
+    """Check if the URL's domain is a known legitimate site.
+
+    Checks the full hostname and the registered domain against the whitelist.
+    This is the most reliable anti-phishing signal — domain reputation
+    outweighs any structural URL feature.
+    """
+    try:
+        parsed = urlparse(url if "://" in url else "http://" + url)
+        host = (parsed.netloc or "").lower().split(":")[0]
+    except Exception:
+        return False
+
+    # Direct match
+    if host in KNOWN_LEGITIMATE_DOMAINS:
+        return True
+
+    # Subdomain match (e.g. docs.google.com -> google.com)
+    for wl_domain in KNOWN_LEGITIMATE_DOMAINS:
+        if host == wl_domain or host.endswith("." + wl_domain):
+            return True
+
+    return False
+
+
 def analyze(url: str,
             cfg: HybridConfig = DEFAULT_CONFIG,
             lexical_model: Optional[LexicalModel] = None,
             vision_model: Optional[VisionModel] = None,
             run_vision: bool = True) -> AnalysisResult:
     """Run the full hybrid pipeline on a single URL."""
+
+    # Stage 0: Whitelist fast-path (most reliable signal)
+    if _check_whitelist(url):
+        return AnalysisResult(
+            url=url, verdict="Safe", risk=0.0, fast_path=True,
+            notes=["Domain is in known legitimate whitelist -> Safe."])
+
     lex_model = lexical_model or LexicalModel()
     vis_model = vision_model or VisionModel()
 
@@ -109,5 +146,4 @@ def analyze(url: str,
 
 
 def _safe_name(url: str) -> str:
-    import re
     return re.sub(r"[^a-zA-Z0-9]", "_", url)[:80]
