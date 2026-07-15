@@ -98,6 +98,12 @@ FEATURE_NAMES = [
     # --- v5 features ---
     "is_known_legitimate",
     "domain_name_in_whitelist",
+    # --- v6 features (advanced typosquatting & impersonation) ---
+    "brand_near_match",
+    "brand_hyphenated_domain",
+    "suspicious_prefix_suffix",
+    "has_non_ascii_chars",
+    "short_unknown_domain",
 ]
 
 SHORTENER_DOMAINS = {
@@ -131,6 +137,27 @@ FREE_HOSTING = {
     "webs.com", "yolasite.com", "ucraft.com", "strikingly.com",
     "carrd.co", "linktr.ee", "beacons.ai", "bio.link",
 }
+
+# Common phishing prefixes/suffixes used to impersonate brands
+SUSPICIOUS_PREFIXES = (
+    "secure", "login", "verify", "auth", "account", "bank", "update",
+    "confirm", "wallet", "crypto", "pay", "mail", "web", "portal",
+    "my", "app", "admin", "panel", "console", "dashboard",
+)
+
+SUSPICIOUS_SUFFIXES = (
+    "secure", "login", "verify", "auth", "account", "bank", "update",
+    "confirm", "wallet", "crypto", "pay", "center", "hub", "portal",
+    "service", "support", "help", "team", "staff", "official",
+)
+
+# Words commonly combined with brand names in phishing domains
+PHISH_COMBINATION_WORDS = (
+    "secure", "login", "verify", "auth", "account", "bank", "update",
+    "confirm", "wallet", "crypto", "pay", "mail", "web", "portal",
+    "center", "hub", "official", "team", "support", "service",
+    "online", "access", "identity", "session", "token",
+)
 
 # Known legitimate domains (major internet sites).
 # This is how real-world phishing detectors work — domain reputation is
@@ -521,6 +548,75 @@ def extract_features(url: str) -> LexicalFeatures:
                 domain_name_in_wl = 1.0
                 break
 
+    # --- v6 features (advanced typosquatting & impersonation) ---
+
+    # Brand near-match: Levenshtein distance <= 2 from a known brand
+    # Catches: gooogle, amazn, microsft, faceb00k, paypa1, etc.
+    # Does NOT flag exact brand matches (those are handled by whitelist)
+    brand_near = 0.0
+    for brand in KNOWN_BRANDS:
+        dist = _levenshtein(domain_base, brand)
+        if 1 <= dist <= 2 and len(domain_base) >= 3:
+            brand_near = 1.0
+            break
+
+    # Brand hyphenated domain: brand + common word with hyphens
+    # Catches: accounts-google.com, secure-paypal.com, google-accounts.com
+    brand_hyphen = 0.0
+    if "-" in domain_base:
+        parts = domain_base.split("-")
+        if len(parts) == 2:
+            for part in parts:
+                for brand in KNOWN_BRANDS:
+                    if (part == brand or _levenshtein(part, brand) <= 1) and \
+                       any(w in parts[0] if parts[0] != brand else parts[1]
+                           for w in PHISH_COMBINATION_WORDS):
+                        brand_hyphen = 1.0
+                        break
+                if brand_hyphen == 1.0:
+                    break
+
+    # Suspicious prefix/suffix: domain starts/ends with phishing words
+    # Catches: secure-paypal.com, paypal-login.com, verify-account.com
+    susp_prefix_suffix = 0.0
+    for prefix in SUSPICIOUS_PREFIXES:
+        if domain_base.startswith(prefix + "-") or domain_base.startswith(prefix + "."):
+            # Check if the rest contains a brand name
+            rest = domain_base[len(prefix)+1:]
+            for brand in KNOWN_BRANDS:
+                if brand in rest or _levenshtein(rest, brand) <= 1:
+                    susp_prefix_suffix = 1.0
+                    break
+        if susp_prefix_suffix == 1.0:
+            break
+    if susp_prefix_suffix == 0.0:
+        for suffix in SUSPICIOUS_SUFFIXES:
+            if domain_base.endswith("-" + suffix) or domain_base.endswith("." + suffix):
+                rest = domain_base[:-(len(suffix)+1)]
+                for brand in KNOWN_BRANDS:
+                    if brand in rest or _levenshtein(rest, brand) <= 1:
+                        susp_prefix_suffix = 1.0
+                        break
+                if susp_prefix_suffix == 1.0:
+                    break
+
+    # Non-ASCII characters in domain (homograph attacks)
+    # Catches: аpple.com (Cyrillic 'a'), gооgle.com (Cyrillic 'o')
+    has_non_ascii = 0.0
+    try:
+        domain_base.encode('ascii')
+    except UnicodeEncodeError:
+        has_non_ascii = 1.0
+
+    # Short unknown domain: short (<12 chars) domain that's not a known
+    # shortener or legitimate site — often suspicious
+    short_unknown = 0.0
+    if len(domain_base) < 12 and not host_no_port in SHORTENER_DOMAINS and \
+       is_known_legit == 0.0 and not _is_ip(host_no_port):
+        # Additional check: low vowel ratio or high entropy suggests random name
+        if vowel_ratio < 0.3 or _entropy(domain_for_entropy) > 3.0:
+            short_unknown = 1.0
+
     values = {
         "url_length": len(raw),
         "hostname_length": len(host_no_port),
@@ -583,6 +679,12 @@ def extract_features(url: str) -> LexicalFeatures:
         # v5
         "is_known_legitimate": is_known_legit,
         "domain_name_in_whitelist": domain_name_in_wl,
+        # v6
+        "brand_near_match": brand_near,
+        "brand_hyphenated_domain": brand_hyphen,
+        "suspicious_prefix_suffix": susp_prefix_suffix,
+        "has_non_ascii_chars": has_non_ascii,
+        "short_unknown_domain": short_unknown,
     }
     return LexicalFeatures(url=raw, values=values)
 
