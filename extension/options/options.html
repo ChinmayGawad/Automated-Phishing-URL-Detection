@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PhishGuard Settings</title>
+  <link rel="stylesheet" href="options.css">
+</head>
+<body>
+  <div class="container">
+    <header class="header">
+      <div class="logo">
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+        </svg>
+        <h1>PhishGuard Settings</h1>
+      </div>
+    </header>
+
+    <section class="settings-section">
+      <h2>General</h2>
+
+      <div class="setting-row">
+        <div class="setting-info">
+          <label class="setting-label">Enable PhishGuard</label>
+          <p class="setting-desc">Master switch to enable/disable the extension</p>
+        </div>
+        <label class="toggle">
+          <input type="checkbox" id="enabled" checked>
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+
+      <div class="setting-row">
+        <div class="setting-info">
+          <label class="setting-label">Real-time URL Checking</label>
+          <p class="setting-desc">Automatically check URLs as you navigate between pages</p>
+        </div>
+        <label class="toggle">
+          <input type="checkbox" id="realTimeCheck" checked>
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+
+      <div class="setting-row">
+        <div class="setting-info">
+          <label class="setting-label">Show Badge Indicator</label>
+          <p class="setting-desc">Show colored badge on the extension icon when threats are detected</p>
+        </div>
+        <label class="toggle">
+          <input type="checkbox" id="showBadge" checked>
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+    </section>
+
+    <section class="settings-section">
+      <h2>Threat Response</h2>
+
+      <div class="setting-row">
+        <div class="setting-info">
+          <label class="setting-label">Detection Mode</label>
+          <p class="setting-desc">Choose how PhishGuard responds to detected threats</p>
+        </div>
+        <select id="blockMode" class="select">
+          <option value="both">Block + Alert (Recommended)</option>
+          <option value="block">Block Only</option>
+          <option value="alert">Alert Only (Non-blocking)</option>
+        </select>
+      </div>
+    </section>
+
+    <section class="settings-section">
+      <h2>Detection Thresholds</h2>
+      <p class="section-desc">Advanced: Adjust the ML model thresholds. Default values work well for most users.</p>
+
+      <div class="setting-row">
+        <div class="setting-info">
+          <label class="setting-label">Safe Threshold</label>
+          <p class="setting-desc">Risk below this value is considered Safe</p>
+        </div>
+        <div class="threshold-input">
+          <input type="range" id="safeThreshold" min="0" max="1" step="0.01" value="0.33">
+          <span id="safeThresholdValue" class="threshold-value">0.33</span>
+        </div>
+      </div>
+
+      <div class="setting-row">
+        <div class="setting-info">
+          <label class="setting-label">Phishing Threshold</label>
+          <p class="setting-desc">Risk above this value is considered Phishing</p>
+        </div>
+        <div class="threshold-input">
+          <input type="range" id="phishingThreshold" min="0" max="1" step="0.01" value="0.66">
+          <span id="phishingThresholdValue" class="threshold-value">0.66</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="settings-section">
+      <h2>About</h2>
+      <div class="about">
+        <p><strong>PhishGuard</strong> v1.0.0</p>
+        <p>Real-time phishing URL detection powered by machine learning.</p>
+        <p class="about-detail">All analysis runs locally in your browser. No data is sent to any server.</p>
+        <p class="about-detail">Model: 57-feature lexical analysis with stacking ensemble classifier.</p>
+      </div>
+    </section>
+
+    <div class="actions">
+      <button id="save" class="btn btn-primary">Save Settings</button>
+      <button id="reset" class="btn btn-secondary">Reset to Defaults</button>
+      <span id="save-status" class="save-status"></span>
+    </div>
+  </div>
+
+  <script src="../lib/config.js"></script>
+  <script src="options.js"></script>
+</body>
+</html>

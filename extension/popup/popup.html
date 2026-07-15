@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PhishGuard</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <header class="header">
+      <div class="logo">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+        </svg>
+        <h1>PhishGuard</h1>
+      </div>
+      <div id="status-badge" class="badge badge-safe">ON</div>
+    </header>
+
+    <section class="current-page">
+      <h2>Current Page</h2>
+      <div class="url-display">
+        <span id="current-url" class="url-text">Loading...</span>
+      </div>
+      <div id="current-result" class="result-container hidden">
+        <div id="current-verdict" class="verdict"></div>
+        <div id="current-risk" class="risk-bar">
+          <div id="current-risk-fill" class="risk-fill"></div>
+        </div>
+        <span id="current-risk-text" class="risk-text"></span>
+      </div>
+      <button id="analyze-current" class="btn btn-primary" disabled>Analyze Current Page</button>
+    </section>
+
+    <section class="manual-input">
+      <h2>Analyze URL</h2>
+      <div class="input-group">
+        <input type="text" id="url-input" placeholder="Enter URL to analyze..." />
+        <button id="analyze-btn" class="btn btn-primary">Analyze</button>
+      </div>
+      <div id="manual-result" class="result-container hidden">
+        <div id="manual-verdict" class="verdict"></div>
+        <div id="manual-risk" class="risk-bar">
+          <div id="manual-risk-fill" class="risk-fill"></div>
+        </div>
+        <span id="manual-risk-text" class="risk-text"></span>
+      </div>
+    </section>
+
+    <footer class="footer">
+      <a href="#" id="settings-link" class="settings-link">Settings</a>
+      <span class="version">v1.0.0</span>
+    </footer>
+  </div>
+
+  <!-- ONNX Runtime Web (must be bundled locally for Chrome extension) -->
+  <script src="../lib/ort.min.js"></script>
+
+  <script src="../lib/whitelist.js"></script>
+  <script src="../lib/features.js"></script>
+  <script src="../lib/model.js"></script>
+  <script src="../lib/analyzer.js"></script>
+  <script src="../lib/config.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

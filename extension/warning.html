@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PhishGuard - Phishing Warning</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #1a0a0a;
+      color: #e0e0e0;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .warning-container {
+      max-width: 600px;
+      padding: 40px;
+      text-align: center;
+    }
+
+    .warning-icon {
+      width: 80px;
+      height: 80px;
+      margin: 0 auto 24px;
+      background: #b71c1c;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 40px;
+      color: white;
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.05); }
+    }
+
+    h1 {
+      font-size: 28px;
+      color: #ef5350;
+      margin-bottom: 16px;
+    }
+
+    .subtitle {
+      font-size: 16px;
+      color: #b0bec5;
+      margin-bottom: 24px;
+    }
+
+    .url-box {
+      background: #0f0f23;
+      padding: 16px;
+      border-radius: 8px;
+      margin-bottom: 24px;
+      border: 1px solid #b71c1c;
+    }
+
+    .url-label {
+      font-size: 12px;
+      text-transform: uppercase;
+      color: #78909c;
+      margin-bottom: 8px;
+    }
+
+    .url-text {
+      font-size: 14px;
+      color: #ef9a9a;
+      word-break: break-all;
+      font-family: monospace;
+    }
+
+    .reasons {
+      text-align: left;
+      background: #16213e;
+      padding: 16px;
+      border-radius: 8px;
+      margin-bottom: 24px;
+    }
+
+    .reasons h3 {
+      font-size: 14px;
+      color: #ffa726;
+      margin-bottom: 12px;
+    }
+
+    .reasons ul {
+      list-style: none;
+      padding: 0;
+    }
+
+    .reasons li {
+      padding: 6px 0;
+      font-size: 13px;
+      color: #b0bec5;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .reasons li::before {
+      content: "\u26A0";
+      color: #ffa726;
+    }
+
+    .actions {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .btn {
+      padding: 14px 24px;
+      border: none;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .btn-safe {
+      background: #1565c0;
+      color: white;
+    }
+
+    .btn-safe:hover {
+      background: #1976d2;
+    }
+
+    .btn-danger {
+      background: transparent;
+      color: #ef5350;
+      border: 1px solid #b71c1c;
+    }
+
+    .btn-danger:hover {
+      background: #b71c1c;
+      color: white;
+    }
+
+    .footer {
+      margin-top: 24px;
+      font-size: 11px;
+      color: #546e7a;
+    }
+
+    .footer a {
+      color: #4fc3f7;
+      text-decoration: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="warning-container">
+    <div class="warning-icon">\u26A0</div>
+    <h1>Phishing Detected</h1>
+    <p class="subtitle">PhishGuard has identified this URL as a potential phishing attempt.</p>
+
+    <div class="url-box">
+      <div class="url-label">Detected URL</div>
+      <div id="detected-url" class="url-text">Loading...</div>
+    </div>
+
+    <div class="reasons">
+      <h3>Why was this blocked?</h3>
+      <ul id="reasons-list"></ul>
+    </div>
+
+    <div class="actions">
+      <button id="go-back" class="btn btn-safe">Go Back to Safety</button>
+      <button id="proceed" class="btn btn-danger">I understand the risks, continue anyway</button>
+    </div>
+
+    <div class="footer">
+      <p>PhishGuard v1.0.0 | <a href="https://github.com" target="_blank">Learn more about phishing protection</a></p>
+    </div>
+  </div>
+
+  <script>
+    const params = new URLSearchParams(window.location.search);
+    const blockedUrl = params.get("url") || "Unknown URL";
+    const reasons = params.get("reasons") ? JSON.parse(decodeURIComponent(params.get("reasons"))) : [];
+
+    document.getElementById("detected-url").textContent = blockedUrl;
+
+    const reasonsList = document.getElementById("reasons-list");
+    if (reasons.length > 0) {
+      reasons.forEach(reason => {
+        const li = document.createElement("li");
+        li.textContent = reason;
+        reasonsList.appendChild(li);
+      });
+    } else {
+      const li = document.createElement("li");
+      li.textContent = "URL was flagged by the ML phishing detection model";
+      reasonsList.appendChild(li);
+    }
+
+    document.getElementById("go-back").addEventListener("click", () => {
+      window.history.back();
+    });
+
+    document.getElementById("proceed").addEventListener("click", () => {
+      if (confirm("Are you sure you want to proceed to this phishing URL? This could put your personal information at risk.")) {
+        window.location.href = blockedUrl;
+      }
+    });
+  </script>
+</body>
+</html>

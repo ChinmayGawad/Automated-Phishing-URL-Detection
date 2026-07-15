@@ -50,6 +50,9 @@ Thumbs.db
 # Logs
 *.log
 
+# ONNX model files (regenerate via build/export_model.py)
+*.onnx
+
 # mimo
 .mimocode/
 mimocode/
