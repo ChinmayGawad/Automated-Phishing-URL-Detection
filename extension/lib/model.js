@@ -31,6 +31,11 @@ async function loadModel() {
         return null;
       }
 
+      // Configure wasm path for Chrome extension
+      if (typeof chrome !== "undefined" && chrome.runtime) {
+        ort.env.wasm.wasmPaths = chrome.runtime.getURL("lib/");
+      }
+
       const modelPath = chrome.runtime.getURL("models/lexical.onnx");
       const response = await fetch(modelPath);
       if (!response.ok) {
