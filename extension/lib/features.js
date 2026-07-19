@@ -101,16 +101,11 @@ const PHISH_COMBINATION_WORDS = [
   "online", "access", "identity", "session", "token",
 ];
 
-// Imported from whitelist.js at runtime
-let KNOWN_LEGITIMATE_DOMAINS = new Set();
-try {
-  KNOWN_LEGITIMATE_DOMAINS = require("./whitelist.js").KNOWN_LEGITIMATE_DOMAINS;
-} catch {
-  // Will be set via initFeatures() if running as ES module
-}
+// KNOWN_LEGITIMATE_DOMAINS is provided by whitelist.js (loaded first)
 
 function initFeatures(domains) {
-  KNOWN_LEGITIMATE_DOMAINS = domains;
+  // KNOWN_LEGITIMATE_DOMAINS is already initialized from whitelist.js
+  // This hook exists for callers that may want to override in the future.
 }
 
 function _entropy(s) {
@@ -452,12 +447,7 @@ function extractFeatures(url) {
   }
 
   // Non-ASCII characters in domain (homograph attacks)
-  let hasNonAscii = 0;
-  try {
-    domainBase.encode("ascii");
-  } catch {
-    hasNonAscii = 1;
-  }
+  const hasNonAscii = /[^\x00-\x7F]/.test(domainBase) ? 1 : 0;
 
   // Short unknown domain
   let shortUnknownDomain = 0;
