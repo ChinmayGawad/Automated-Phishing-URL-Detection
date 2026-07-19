@@ -23,6 +23,11 @@ document.addEventListener("DOMContentLoaded", async () => {
     return;
   }
 
+  // Helper: skip browser internal URLs
+  function isInternalUrl(url) {
+    return /^(chrome|chrome-extension|about|edge|moz-extension|safari-extension):\/\//i.test(url);
+  }
+
   // Get current tab URL
   let currentTabUrl = null;
   try {
@@ -31,6 +36,22 @@ document.addEventListener("DOMContentLoaded", async () => {
       currentTabUrl = tab.url;
       currentUrlEl.textContent = currentTabUrl;
       analyzeCurrentBtn.disabled = false;
+      // Auto-analyze the current URL immediately
+      if (isInternalUrl(currentTabUrl)) {
+        displayResult("current", { url: currentTabUrl, verdict: "Safe", risk: 0, fastPath: true, latencyMs: 0, notes: ["Browser internal page"] });
+      } else {
+        analyzeCurrentBtn.disabled = true;
+        analyzeCurrentBtn.textContent = "Analyzing...";
+        try {
+          const result = await analyzeUrl(currentTabUrl, { thresholds: config.thresholds });
+          displayResult("current", result);
+        } catch (err) {
+          console.error("Auto-analysis error:", err);
+        } finally {
+          analyzeCurrentBtn.disabled = false;
+          analyzeCurrentBtn.textContent = "Analyze Current Page";
+        }
+      }
     } else {
       currentUrlEl.textContent = "No URL available";
     }
@@ -38,9 +59,13 @@ document.addEventListener("DOMContentLoaded", async () => {
     currentUrlEl.textContent = "Unable to get current URL";
   }
 
-  // Analyze current page
+  // Analyze current page (manual re-analysis)
   analyzeCurrentBtn.addEventListener("click", async () => {
     if (!currentTabUrl) return;
+    if (isInternalUrl(currentTabUrl)) {
+      displayResult("current", { url: currentTabUrl, verdict: "Safe", risk: 0, fastPath: true, latencyMs: 0, notes: ["Browser internal page"] });
+      return;
+    }
     analyzeCurrentBtn.disabled = true;
     analyzeCurrentBtn.textContent = "Analyzing...";
     try {
@@ -58,6 +83,10 @@ document.addEventListener("DOMContentLoaded", async () => {
   analyzeBtn.addEventListener("click", async () => {
     const url = urlInput.value.trim();
     if (!url) return;
+    if (isInternalUrl(url)) {
+      displayResult("manual", { url, verdict: "Safe", risk: 0, fastPath: true, latencyMs: 0, notes: ["Browser internal page"] });
+      return;
+    }
     analyzeBtn.disabled = true;
     analyzeBtn.textContent = "Analyzing...";
     try {
