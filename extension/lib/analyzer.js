@@ -10,15 +10,7 @@ const DEFAULT_THRESHOLDS = {
   phishingThreshold: 0.66,
 };
 
-// Known brand names for rule-based detection
-const KNOWN_BRANDS = [
-  "google", "facebook", "amazon", "apple", "microsoft", "netflix",
-  "paypal", "ebay", "instagram", "twitter", "linkedin", "youtube",
-  "github", "reddit", "whatsapp", "snapchat", "tiktok", "discord",
-  "spotify", "uber", "airbnb", "dropbox", "adobe", "zoom", "slack",
-  "stripe", "shopify", "walmart", "target", "bestbuy", "costco",
-  "bankofamerica", "wellsfargo", "chase", "citi", "roblox", "steam", "epic",
-];
+// KNOWN_BRANDS is provided by features.js (loaded first)
 
 // Common phishing combination words
 const PHISH_WORDS = [
