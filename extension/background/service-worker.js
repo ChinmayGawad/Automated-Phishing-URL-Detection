@@ -179,13 +179,15 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 
 // ===== Notification click handling =====
 
-chrome.notifications.onClicked.addListener((notificationId) => {
-  if (notificationId.startsWith("phishguard-")) {
-    const tabId = parseInt(notificationId.split("-")[1]);
-    if (!isNaN(tabId)) {
-      chrome.tabs.update(tabId, { active: true });
+if (chrome.notifications && chrome.notifications.onClicked) {
+  chrome.notifications.onClicked.addListener((notificationId) => {
+    if (notificationId.startsWith("phishguard-")) {
+      const tabId = parseInt(notificationId.split("-")[1]);
+      if (!isNaN(tabId)) {
+        chrome.tabs.update(tabId, { active: true });
+      }
     }
-  }
-});
+  });
+}
 
 console.log("PhishGuard: Service worker loaded");
