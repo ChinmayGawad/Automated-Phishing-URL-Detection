@@ -82,11 +82,14 @@ async function predictProba(vector) {
     }
 
     const results = await session.run(feeds);
-    const outputName = session.outputNames[0];
-    const output = results[outputName];
+    // The ONNX model outputs two tensors: 'label' (int64) and 'probabilities'
+    // (float32 [p_class0, p_class1]). Use the probabilities tensor.
+    const probName = session.outputNames.includes("probabilities")
+      ? "probabilities"
+      : session.outputNames[session.outputNames.length - 1];
+    const output = results[probName];
 
-    // predict_proba returns [prob_class_0, prob_class_1]
-    // We want class 1 (phishing) probability
+    // probabilities = [prob_class_0, prob_class_1]; we want class 1 (phishing).
     if (output.data.length >= 2) {
       return output.data[1]; // phishing probability
     }
@@ -102,11 +105,11 @@ async function predictProba(vector) {
  * Uses a weighted combination of key features to estimate risk.
  */
 function fallbackPredict(vector) {
-  if (!vector || vector.length < 57) return 0.5;
+  if (!vector || vector.length < 77) return 0.5;
 
   let risk = 0.5; // neutral baseline
 
-  // Key phishing indicators (feature indices from FEATURE_NAMES)
+  // Key phishing indicators (feature indices from FEATURE_NAMES, 77-feature order)
   const urlLength = vector[0];           // url_length
   const hasIP = vector[13];              // has_ip_host
   const hasHTTPS = vector[14];           // has_https
@@ -116,7 +119,7 @@ function fallbackPredict(vector) {
   const brandMatch = vector[24];         // brand_domain_match
   const tldTrust = vector[31];           // tld_trust_score
   const isFreeHosting = vector[32];      // is_free_hosting
-  const isKnownLegit = vector[55];       // is_known_legitimate
+  const isKnownLegit = vector[56];       // is_known_legitimate
 
   // Known legitimate = very safe
   if (isKnownLegit > 0) return 0.05;

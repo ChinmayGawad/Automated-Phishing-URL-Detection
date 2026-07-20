@@ -10,6 +10,7 @@ from __future__ import annotations
 import math
 import re
 from dataclasses import dataclass
+from functools import lru_cache
 from urllib.parse import urlparse
 
 # Keywords frequently abused by phishing pages to create a sense of urgency or
@@ -104,6 +105,22 @@ FEATURE_NAMES = [
     "suspicious_prefix_suffix",
     "has_non_ascii_chars",
     "short_unknown_domain",
+    # --- v7 features (advanced patterns & interactions) ---
+    "domain_consonant_cluster_ratio",
+    "url_encoding_density",
+    "domain_starts_with_digit",
+    "domain_ends_with_digit",
+    "path_has_file_extension",
+    "has_suspicious_file_ext",
+    "domain_has_repeated_chars",
+    "domain_avg_word_length",
+    "path_to_domain_ratio",
+    "has_double_scheme",
+    "brand_min_levenshtein",
+    "domain_digit_ratio",
+    "path_segment_count",
+    "query_has_encoded",
+    "has_suspicious_port",
 ]
 
 SHORTENER_DOMAINS = {
@@ -285,6 +302,22 @@ KNOWN_LEGITIMATE_DOMAINS = frozenset({
     "jetbrains.com", "visualstudio.com", "sublimetext.com",
     "namecheap.com", "godaddy.com", "hover.com",
     "1password.com", "lastpass.com", "bitwarden.com",
+    # Developer frameworks / tooling sites (short single-word brand domains)
+    "solidjs.com", "remix.run", "svelte.dev", "astro.build",
+    "vuejs.org", "react.dev", "angular.io", "nextjs.org", "nuxt.com",
+    "deno.com", "bun.sh", "pnpm.io", "npmjs.com", "yarnpkg.com",
+    "rollupjs.org", "vitejs.dev", "webpack.js.org", "tailwindcss.com",
+    "prisma.io", "supabase.com", "planetscale.com", "neon.tech",
+    "turso.tech", "dgraph.io", "arangodb.com", "redis.io", "memcached.org",
+    "rabbitmq.com", "kafka.apache.org", "elastic.co", "datadog.com",
+    "grafana.com", "prometheus.io", "newrelic.com", "sentry.io",
+    # Universities / education
+    "mit.edu", "ocw.mit.edu", "stanford.edu", "harvard.edu",
+    "berkeley.edu", "cmu.edu", "caltech.edu", "princeton.edu",
+    "yale.edu", "cornell.edu", "columbia.edu", "upenn.edu",
+    "umich.edu", "uw.edu", "ucla.edu", "utexas.edu", "gatech.edu",
+    # Personal / project GitHub Pages (legit developer portfolios)
+    "chinmaygawad.github.io",
 })
 
 
@@ -341,9 +374,20 @@ def _max_consecutive_special(s: str) -> int:
     return mx
 
 
+@lru_cache(maxsize=4096)
+def _extract_features_cached(raw: str) -> LexicalFeatures:
+    """Cached worker. Keyed on the stripped URL so repeated URLs (e.g. in the
+    simulator or a request stream) don't pay the feature cost twice."""
+    return _extract_features_impl(raw)
+
+
 def extract_features(url: str) -> LexicalFeatures:
-    """Return lexical features for a single URL."""
-    raw = url.strip()
+    """Return lexical features for a single URL (cached)."""
+    return _extract_features_cached(url.strip())
+
+
+def _extract_features_impl(raw: str) -> LexicalFeatures:
+    """Return lexical features for a single (already stripped) URL."""
     parsed = urlparse(raw if "://" in raw else "http://" + raw)
     host = (parsed.netloc or "").lower()
     host_no_port = host.split(":")[0]
@@ -375,15 +419,35 @@ def extract_features(url: str) -> LexicalFeatures:
 
     # brand name in domain (typosquatting detector)
     domain_base = domain_for_entropy.lower()
+
+    # --- single pass over brands: compute every brand-derived signal at once
+    # to avoid repeated O(brands) Levenshtein scans (a major perf hotspot). ---
     brand_in = 0.0
-    brand_match = 0.0  # 1 if domain is an exact brand or very close edit
-    for brand in KNOWN_BRANDS:
-        if brand in domain_base:
-            brand_in = 1.0
-            # exact match or edit distance <= 1 (catches paypa1, micr0soft, etc.)
-            if domain_base == brand or _levenshtein(domain_base, brand) <= 1:
-                brand_match = 1.0
-                break
+    brand_match = 0.0       # exact brand or edit distance <= 1
+    brand_near = 0.0        # edit distance in [1, 2]
+    brand_min_lev = 10.0    # minimum edit distance to any known brand (capped)
+    if domain_base:
+        db_len = len(domain_base)
+        for brand in KNOWN_BRANDS:
+            # Quick substring / exact-match shortcut (cheap, no DP).
+            if brand in domain_base:
+                brand_in = 1.0
+                if domain_base == brand:
+                    brand_match = 1.0
+                elif db_len - len(brand) in (-1, 0, 1) and \
+                        _levenshtein(domain_base, brand) <= 1:
+                    brand_match = 1.0
+            # Length pre-filter: Levenshtein >= |len diff|, so a brand whose
+            # length differs by >2 can never be a near-match and cannot beat
+            # the current best minimum (capped at 10). Skip the DP for it.
+            diff = abs(db_len - len(brand))
+            if diff > 2 and diff >= brand_min_lev:
+                continue
+            d = _levenshtein(domain_base, brand)
+            if d < brand_min_lev:
+                brand_min_lev = d
+            if brand_match == 0.0 and 1 <= d <= 2 and db_len >= 3:
+                brand_near = 1.0
 
     # has explicit non-standard port (e.g. :8080)
     has_port_num = 0.0
@@ -550,15 +614,7 @@ def extract_features(url: str) -> LexicalFeatures:
 
     # --- v6 features (advanced typosquatting & impersonation) ---
 
-    # Brand near-match: Levenshtein distance <= 2 from a known brand
-    # Catches: gooogle, amazn, microsft, faceb00k, paypa1, etc.
-    # Does NOT flag exact brand matches (those are handled by whitelist)
-    brand_near = 0.0
-    for brand in KNOWN_BRANDS:
-        dist = _levenshtein(domain_base, brand)
-        if 1 <= dist <= 2 and len(domain_base) >= 3:
-            brand_near = 1.0
-            break
+    # Brand near-match: computed in the unified brand pass above (brand_near).
 
     # Brand hyphenated domain: brand + common word with hyphens
     # Catches: accounts-google.com, secure-paypal.com, google-accounts.com
@@ -616,6 +672,68 @@ def extract_features(url: str) -> LexicalFeatures:
         # Additional check: low vowel ratio or high entropy suggests random name
         if vowel_ratio < 0.3 or _entropy(domain_for_entropy) > 3.0:
             short_unknown = 1.0
+
+    # --- v7 features (advanced patterns & interactions) ---
+
+    # Consonant cluster ratio: phishing domains often have unusual consonant patterns
+    consonants_only = [c for c in domain_base if c.isalpha() and c not in "aeiou"]
+    max_cluster = 0
+    cur_cluster = 0
+    for c in domain_base:
+        if c.isalpha() and c not in "aeiou":
+            cur_cluster += 1
+            max_cluster = max(max_cluster, cur_cluster)
+        else:
+            cur_cluster = 0
+    consonant_cluster_ratio = max_cluster / max(len(domain_base), 1)
+
+    # URL encoding density: percentage of encoded characters (%XX)
+    encoding_density = hex_encoded / max(len(raw), 1)
+
+    # Domain starts with digit (often suspicious)
+    domain_starts_digit = float(domain_base[0].isdigit()) if domain_base else 0.0
+
+    # Domain ends with digit (often suspicious)
+    domain_ends_digit = float(domain_base[-1].isdigit()) if domain_base else 0.0
+
+    # Path has file extension (phishing often uses .php, .html, .exe)
+    path_has_ext = float(bool(re.search(r"\.[a-zA-Z]{2,5}$", path)))
+
+    # Suspicious file extensions in path
+    suspicious_exts = (".php", ".exe", ".bat", ".cmd", ".scr", ".pif",
+                       ".com", ".hta", ".vbs", ".js", ".wsf")
+    has_susp_ext = float(any(path.lower().endswith(ext) for ext in suspicious_exts))
+
+    # Domain has repeated characters (gooooogle, faceboook)
+    domain_has_repeated = float(len(domain_base) != len(set(domain_base)))
+
+    # Average word length in domain
+    domain_avg_word_len = max_word_len  # reuse existing computation
+
+    # Path to domain ratio (phishing often has long paths)
+    path_domain_ratio = len(path) / max(len(domain_for_entropy), 1)
+
+    # Has double scheme (httphttp:// — malformed/phishing)
+    has_double_scheme = float("httphttp" in raw.lower() or "httpshttps" in raw.lower())
+
+    # Minimum Levenshtein distance to any known brand (from unified brand pass)
+    brand_min_lev = float(brand_min_lev)  # already capped at 10 in the pass
+
+    # Domain digit ratio (separate from URL digit ratio)
+    domain_digit_ratio_val = domain_digits / max(len(domain_base), 1)
+
+    # Path segment count
+    path_segments = len([s for s in path.split("/") if s])
+
+    # Query has encoded characters
+    query_has_enc = float("%" in query)
+
+    # Suspicious port (non-standard)
+    susp_port = 0.0
+    if ":" in host:
+        port_part = host.split(":")[-1]
+        if port_part.isdigit() and int(port_part) not in (80, 443, 8080, 8443):
+            susp_port = 1.0
 
     values = {
         "url_length": len(raw),
@@ -685,6 +803,22 @@ def extract_features(url: str) -> LexicalFeatures:
         "suspicious_prefix_suffix": susp_prefix_suffix,
         "has_non_ascii_chars": has_non_ascii,
         "short_unknown_domain": short_unknown,
+        # v7
+        "domain_consonant_cluster_ratio": consonant_cluster_ratio,
+        "url_encoding_density": encoding_density,
+        "domain_starts_with_digit": domain_starts_digit,
+        "domain_ends_with_digit": domain_ends_digit,
+        "path_has_file_extension": path_has_ext,
+        "has_suspicious_file_ext": has_susp_ext,
+        "domain_has_repeated_chars": domain_has_repeated,
+        "domain_avg_word_length": domain_avg_word_len,
+        "path_to_domain_ratio": path_domain_ratio,
+        "has_double_scheme": has_double_scheme,
+        "brand_min_levenshtein": brand_min_lev,
+        "domain_digit_ratio": domain_digit_ratio_val,
+        "path_segment_count": float(path_segments),
+        "query_has_encoded": query_has_enc,
+        "has_suspicious_port": susp_port,
     }
     return LexicalFeatures(url=raw, values=values)
 

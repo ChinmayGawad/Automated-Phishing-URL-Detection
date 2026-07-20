@@ -1,6 +1,9 @@
 /**
  * Lexical URL feature extraction — JavaScript port of src/lexical/features.py
- * Extracts 57 numerical features from a URL string with zero network requests.
+ * Extracts 77 numerical features from a URL string with zero network requests.
+ *
+ * FEATURE_NAMES / KNOWN_BRANDS are kept in lock-step with the Python source
+ * via `python scripts/gen_extension_constants.py`.
  */
 
 const SUSPICIOUS_KEYWORDS = [
@@ -10,6 +13,7 @@ const SUSPICIOUS_KEYWORDS = [
   "otp", "2fa", "authenticate",
 ];
 
+// KNOWN_BRANDS — GENERATED from src/lexical/features.py
 const KNOWN_BRANDS = [
   "google", "facebook", "amazon", "apple", "microsoft", "netflix",
   "paypal", "ebay", "instagram", "twitter", "linkedin", "youtube",
@@ -53,6 +57,8 @@ const FREE_HOSTING = new Set([
   "carrd.co", "linktr.ee", "beacons.ai", "bio.link",
 ]);
 
+// FEATURE_NAMES — GENERATED from src/lexical/features.py (must stay in the
+// exact same order so the ONNX vector aligns). 77 features.
 const FEATURE_NAMES = [
   "url_length", "hostname_length", "path_length",
   "num_dots", "num_hyphens", "num_underscores", "num_slashes",
@@ -81,6 +87,14 @@ const FEATURE_NAMES = [
   // v6 (advanced typosquatting & impersonation)
   "brand_near_match", "brand_hyphenated_domain",
   "suspicious_prefix_suffix", "has_non_ascii_chars", "short_unknown_domain",
+  // v7 (advanced patterns & interactions)
+  "domain_consonant_cluster_ratio", "url_encoding_density",
+  "domain_starts_with_digit", "domain_ends_with_digit",
+  "path_has_file_extension", "has_suspicious_file_ext",
+  "domain_has_repeated_chars", "domain_avg_word_length",
+  "path_to_domain_ratio", "has_double_scheme", "brand_min_levenshtein",
+  "domain_digit_ratio", "path_segment_count", "query_has_encoded",
+  "has_suspicious_port",
 ];
 
 // Common phishing prefixes/suffixes
@@ -174,7 +188,13 @@ function extractFeatures(url) {
 
   const host = (parsed.hostname || "").toLowerCase();
   const hostNoPort = host.split(":")[0];
-  const path = parsed.pathname || "";
+  // Mirror Python urlparse: path is the part after the first "/" following the
+  // authority; if there is no "/" at all it is "" (so "https://google.com"
+  // -> "" but "https://google.com/" -> "/").
+  const _afterAuth = raw.replace(/^[a-zA-Z][a-zA-Z0-9+.\-]*:\/\//, "")
+    .split("?")[0].split("#")[0];
+  const _slash = _afterAuth.indexOf("/");
+  const path = _slash === -1 ? "" : _afterAuth.slice(_slash);
   const query = (parsed.search || "").replace(/^\?/, "");
 
   const lower = raw.toLowerCase();
@@ -199,7 +219,7 @@ function extractFeatures(url) {
   }
 
   const domainForEntropy = hostNoPort.includes(".")
-    ? hostNoPort.split(".").slice(-2, -1)[0] || hostNoPort.split(".")[0]
+    ? hostNoPort.split(".").slice(0, -1).join(".")
     : hostNoPort;
   const domainBase = domainForEntropy.toLowerCase();
 
@@ -337,6 +357,8 @@ function extractFeatures(url) {
   const hostToURLRatio = hostNoPort.length / Math.max(urlLength, 1);
   const pathToURLRatio = path.length / Math.max(urlLength, 1);
   const numQueryParams = query ? query.split("&").length : 0;
+  // Python path-based features use the (possibly empty) path; ensure we don't
+  // double-count a bare "/" as a segment.
   const hasFragment = raw.includes("#") ? 1 : 0;
 
   const domainWords = domainBase.split(/[^a-zA-Z]/).filter(w => w.length >= 2);
@@ -458,6 +480,74 @@ function extractFeatures(url) {
     }
   }
 
+  // v7 - Advanced patterns & interactions
+
+  // Consonant cluster ratio
+  let maxCluster = 0, curCluster = 0;
+  for (const c of domainBase) {
+    if (/[a-zA-Z]/.test(c) && !"aeiou".includes(c)) {
+      curCluster++;
+      maxCluster = Math.max(maxCluster, curCluster);
+    } else {
+      curCluster = 0;
+    }
+  }
+  const domainConsonantClusterRatio = maxCluster / Math.max(domainBase.length, 1);
+
+  // URL encoding density
+  const urlEncodingDensity = hexEncoded / Math.max(urlLength, 1);
+
+  // Domain starts/ends with digit
+  const domainStartsWithDigit = domainBase.length > 0 && /\d/.test(domainBase[0]) ? 1 : 0;
+  const domainEndsWithDigit = domainBase.length > 0 && /\d/.test(domainBase[domainBase.length - 1]) ? 1 : 0;
+
+  // Path has file extension
+  const pathHasFileExtension = /\.[a-zA-Z]{2,5}$/.test(path) ? 1 : 0;
+
+  // Suspicious file extensions
+  const suspiciousExts = [".php", ".exe", ".bat", ".cmd", ".scr", ".pif",
+    ".com", ".hta", ".vbs", ".js", ".wsf"];
+  const hasSuspiciousFileExt = suspiciousExts.some(ext => path.toLowerCase().endsWith(ext)) ? 1 : 0;
+
+  // Domain has repeated characters
+  const domainHasRepeatedChars = domainBase.length !== new Set(domainBase).size ? 1 : 0;
+
+  // Average domain word length (reuse maxDomainWordLength as proxy)
+  const domainAvgWordLength = maxDomainWordLength;
+
+  // Path to domain ratio
+  const pathToDomainRatio = path.length / Math.max(domainForEntropy.length, 1);
+
+  // Double scheme
+  const hasDoubleScheme = (raw.toLowerCase().includes("httphttp") ||
+    raw.toLowerCase().includes("httpshttps")) ? 1 : 0;
+
+  // Minimum Levenshtein distance to any known brand
+  let minLev = 10;
+  for (const brand of KNOWN_BRANDS) {
+    const d = _levenshtein(domainBase, brand);
+    if (d < minLev) minLev = d;
+  }
+  const brandMinLevenshtein = Math.min(minLev, 10);
+
+  // Domain digit ratio
+  const domainDigitRatio = domainDigitCount / Math.max(domainBase.length, 1);
+
+  // Path segment count
+  const pathSegmentCount = path.split("/").filter(s => s.length > 0).length;
+
+  // Query has encoded chars
+  const queryHasEncoded = raw.includes("%") && query.includes("%") ? 1 : 0;
+
+  // Suspicious port
+  let hasSuspiciousPort = 0;
+  if (host.includes(":")) {
+    const portPart = host.split(":").pop();
+    if (/^\d+$/.test(portPart) && ![80, 443, 8080, 8443].includes(parseInt(portPart, 10))) {
+      hasSuspiciousPort = 1;
+    }
+  }
+
   const values = {
     url_length: urlLength,
     hostname_length: hostnameLength,
@@ -522,6 +612,22 @@ function extractFeatures(url) {
     suspicious_prefix_suffix: suspiciousPrefixSuffix,
     has_non_ascii_chars: hasNonAscii,
     short_unknown_domain: shortUnknownDomain,
+    // v7
+    domain_consonant_cluster_ratio: domainConsonantClusterRatio,
+    url_encoding_density: urlEncodingDensity,
+    domain_starts_with_digit: domainStartsWithDigit,
+    domain_ends_with_digit: domainEndsWithDigit,
+    path_has_file_extension: pathHasFileExtension,
+    has_suspicious_file_ext: hasSuspiciousFileExt,
+    domain_has_repeated_chars: domainHasRepeatedChars,
+    domain_avg_word_length: domainAvgWordLength,
+    path_to_domain_ratio: pathToDomainRatio,
+    has_double_scheme: hasDoubleScheme,
+    brand_min_levenshtein: brandMinLevenshtein,
+    domain_digit_ratio: domainDigitRatio,
+    path_segment_count: pathSegmentCount,
+    query_has_encoded: queryHasEncoded,
+    has_suspicious_port: hasSuspiciousPort,
   };
 
   const vector = FEATURE_NAMES.map(name => values[name]);
