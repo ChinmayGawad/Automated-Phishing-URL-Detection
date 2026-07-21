@@ -166,7 +166,7 @@ def train(csv_path: str | Path, model_path: str | Path = DEFAULT_MODEL_PATH,
 
     # Train-set (out-of-fold-free) proba for importances via permutation-free
     # proxy: use the model's own feature importances when available.
-    importances = _get_feature_importances(clf)
+    importances = _get_feature_importances(clf, X_train, y_train)
     sorted_imp = sorted(importances.items(), key=lambda x: x[1], reverse=True)
     metrics["top_features"] = sorted_imp[:15]
 
@@ -221,14 +221,32 @@ def export_onnx(csv_path: str | Path, onnx_path: str | Path = DEFAULT_ONNX_PATH)
     return {"onnx_path": str(onnx_path), "n_features": len(FEATURE_NAMES)}
 
 
-def _get_feature_importances(clf) -> dict[str, float]:
-    """Extract feature importances.
+def _get_feature_importances(clf, X=None, y=None) -> dict[str, float]:
+    """Extract feature importances from the trained classifier.
 
-    ``HistGradientBoostingClassifier`` does not expose importances directly, so
-    fall back to a permutation-free proxy using a RandomForest fitted quickly
-    on a subsample, OR just report equal weights if unavailable. We use a fast
-    RF on a 20k subsample for interpretability.
+    Tries HistGradientBoosting's built-in ``feature_importances_`` first
+    (available since scikit-learn 1.3).  If unavailable, fits a fast
+    RandomForest on a subsample and uses its importances as a proxy.
     """
+    # Try the model's own importances (HistGradientBoosting >= 1.3)
+    if hasattr(clf, "feature_importances_"):
+        imp = clf.feature_importances_
+        return {name: float(v) for name, v in zip(FEATURE_NAMES, imp)}
+
+    # Fallback: quick RF on subsample for interpretability
+    if X is not None and y is not None:
+        rng = np.random.RandomState(42)
+        n = min(len(X), 20000)
+        idx = rng.choice(len(X), size=n, replace=False)
+        X_sub, y_sub = X[idx], y[idx]
+        rf = RandomForestClassifier(
+            n_estimators=100, max_depth=10, min_samples_leaf=10,
+            n_jobs=-1, random_state=42, class_weight="balanced_subsample",
+        )
+        rf.fit(X_sub, y_sub)
+        imp = rf.feature_importances_
+        return {name: float(v) for name, v in zip(FEATURE_NAMES, imp)}
+
     return {name: 0.0 for name in FEATURE_NAMES}
 
 
