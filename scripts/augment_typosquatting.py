@@ -11,37 +11,15 @@ detection of advanced phishing patterns like:
 from __future__ import annotations
 
 import random
+import sys
 from pathlib import Path
 import pandas as pd
 
 ROOT = Path(__file__).resolve().parents[1]
 OUTPUT = ROOT / "data" / "raw" / "lexical_urls.csv"
 
-KNOWN_BRANDS = [
-    "google", "facebook", "amazon", "apple", "microsoft", "netflix",
-    "paypal", "ebay", "instagram", "twitter", "linkedin", "youtube",
-    "github", "reddit", "whatsapp", "snapchat", "tiktok", "discord",
-    "spotify", "uber", "airbnb", "dropbox", "adobe", "zoom", "slack",
-    "stripe", "shopify", "walmart", "target", "bestbuy", "costco",
-    "bankofamerica", "wellsfargo", "chase", "citi", "usaa",
-    "roblox", "steam", "epic",
-]
-
-SUSPICIOUS_TLDS = ["tk", "ml", "ga", "cf", "gq", "ru", "cn", "top", "xyz",
-                   "buzz", "icu", "cam", "rest", "surf", "mom",
-                   "shop", "click", "sbs", "cfd", "digital", "help",
-                   "live", "life", "fun", "site", "store", "rent"]
-
-TRUSTED_TLDS = ["com", "org", "net", "io", "co"]
-
-PHISH_WORDS = ["secure", "login", "verify", "auth", "account", "bank",
-               "update", "confirm", "wallet", "crypto", "pay", "mail",
-               "web", "portal", "center", "hub", "official", "team",
-               "support", "service", "online", "access"]
-
-FREE_HOSTS = ["github.io", "gitbook.io", "appspot.com", "netlify.app",
-              "vercel.app", "pages.dev", "herokuapp.com", "weebly.com",
-              "wixsite.com", "wordpress.com", "blogspot.com"]
+sys.path.insert(0, str(ROOT))
+from src.utils.constants import KNOWN_BRANDS, SUSPICIOUS_TLDS, TRUSTED_TLDS, PHISH_WORDS, FREE_HOSTING
 
 
 def _char_variants(brand: str) -> list[str]:
@@ -126,7 +104,7 @@ def generate_phishing_samples(n_per_brand: int = 50) -> list[tuple[str, int]]:
             samples.append((f"https://{variant}.com", 1))
 
         # Free hosting variants
-        for host in random.sample(FREE_HOSTS, min(3, len(FREE_HOSTS))):
+        for host in random.sample(FREE_HOSTING, min(3, len(FREE_HOSTING))):
             samples.append((f"https://{brand}-secure.{host}/login", 1))
 
     return samples

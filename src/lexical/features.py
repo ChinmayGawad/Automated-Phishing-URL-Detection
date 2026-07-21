@@ -7,11 +7,14 @@ makes Stage 1 suitable as a low-latency fast-path classifier.
 
 from __future__ import annotations
 
+import logging
 import math
 import re
 from dataclasses import dataclass
 from functools import lru_cache
 from urllib.parse import urlparse
+
+logger = logging.getLogger("phishguard.features")
 
 # Keywords frequently abused by phishing pages to create a sense of urgency or
 # impersonate a brand's account flow.
@@ -22,19 +25,9 @@ SUSPICIOUS_KEYWORDS = (
     "otp", "2fa", "authenticate",
 )
 
-# Well-known brand names for typosquatting detection in domain.
-KNOWN_BRANDS = (
-    "google", "facebook", "amazon", "apple", "microsoft", "netflix",
-    "paypal", "ebay", "instagram", "twitter", "linkedin", "youtube",
-    "github", "stackoverflow", "reddit", "wikipedia", "whatsapp",
-    "snapchat", "tiktok", "discord", "spotify", "uber", "airbnb",
-    "dropbox", "adobe", "zoom", "slack", "stripe", "shopify",
-    "walmart", "target", "bestbuy", "costco", "homedepot",
-    "bankofamerica", "wellsfargo", "chase", "citi", "usaa",
-    "hsbc", "barclays", "lloyds", "natwest", "santander",
-    "irs", "usps", "fedex", "ups", "dhl",
-    "roblox", "steam", "epic",
-)
+# Import shared constants from the centralized module.
+from ..utils.constants import KNOWN_BRANDS, SUSPICIOUS_TLDS, TRUSTED_TLDS
+from ..utils.constants import FREE_HOSTING, SHORTENER_DOMAINS, PHISH_WORDS
 
 # Feature names, in a stable order. Used by both training and inference.
 FEATURE_NAMES = [
@@ -122,38 +115,6 @@ FEATURE_NAMES = [
     "query_has_encoded",
     "has_suspicious_port",
 ]
-
-SHORTENER_DOMAINS = {
-    "bit.ly", "tinyurl.com", "goo.gl", "t.co", "ow.ly", "is.gd",
-    "buff.ly", "adf.ly", "shorturl.at", "cutt.ly",
-}
-
-SUSPICIOUS_TLDS = {
-    "tk", "ml", "ga", "cf", "gq", "ru", "cn", "top", "xyz", "country",
-    "buzz", "icu", "cam", "rest", "surf", "mom",
-    "shop", "click", "sbs", "cfd", "digital", "help",
-    "live", "life", "fun", "site", "store", "rent",
-}
-
-# TLDs commonly used by legitimate established sites (high trust).
-TRUSTED_TLDS = {
-    "com", "org", "net", "edu", "gov", "io", "co", "us", "uk", "de",
-    "fr", "jp", "au", "ca", "nl", "se", "no", "fi", "dk", "at",
-    "ch", "be", "it", "es", "pt", "pl", "cz", "ro", "hu", "bg",
-    "hr", "sk", "si", "lt", "lv", "ee", "ie", "nz", "za", "br",
-    "mx", "ar", "cl", "pe", "co", "in", "sg", "hk", "tw", "kr",
-    "me", "tv", "cc", "ws", "to", "ai",
-}
-
-# Free hosting / site-builder platforms often abused by phishing.
-FREE_HOSTING = {
-    "github.io", "gitbook.io", "appspot.com", "firebaseapp.com",
-    "netlify.app", "vercel.app", "pages.dev", "workers.dev",
-    "herokuapp.com", "glitch.me", "repl.co", "codesandbox.io",
-    "weebly.com", "wixsite.com", "wordpress.com", "blogspot.com",
-    "webs.com", "yolasite.com", "ucraft.com", "strikingly.com",
-    "carrd.co", "linktr.ee", "beacons.ai", "bio.link",
-}
 
 # Common phishing prefixes/suffixes used to impersonate brands
 SUSPICIOUS_PREFIXES = (
