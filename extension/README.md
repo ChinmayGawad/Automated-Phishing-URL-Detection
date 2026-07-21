@@ -47,11 +47,11 @@ Real-time phishing URL detection powered by machine learning, running entirely i
 
 ## How It Works
 
-PhishGuard uses a 57-feature lexical analysis engine to detect phishing URLs:
+PhishGuard uses a 77-feature lexical analysis engine to detect phishing URLs:
 
-1. **Whitelist check** — Known legitimate domains (260+) are immediately marked Safe
-2. **Feature extraction** — 57 numerical features are computed from the URL string (no network requests)
-3. **ML inference** — A stacking ensemble classifier (RandomForest + GradientBoosting + ExtraTrees + LogisticRegression) predicts phishing probability
+1. **Whitelist check** — Known legitimate domains (300+) are immediately marked Safe
+2. **Feature extraction** — 77 numerical features are computed from the URL string (no network requests)
+3. **ML inference** — A HistGradientBoosting classifier predicts phishing probability
 4. **Fast-path** — High-confidence results skip further analysis for instant verdicts
 
 ## Settings
@@ -78,7 +78,7 @@ Click the extension icon → Settings to configure:
 extension/
 ├── manifest.json          # Manifest V3 config
 ├── lib/
-│   ├── features.js        # 57-feature extraction (JS port)
+│   ├── features.js        # 77-feature extraction (JS port)
 │   ├── model.js           # ONNX model inference
 │   ├── whitelist.js       # Known legitimate domains
 │   ├── analyzer.js        # Pipeline orchestrator
@@ -93,12 +93,12 @@ extension/
 
 ## Model
 
-The ML model is a scikit-learn StackingClassifier exported to ONNX format:
+The ML model is a scikit-learn HistGradientBoostingClassifier exported to ONNX format (via a RandomForest proxy for ONNX compatibility):
 
-- **Base learners**: RandomForest (300 trees), GradientBoosting (150 trees), ExtraTrees (300 trees)
-- **Meta-learner**: LogisticRegression
-- **Features**: 57 lexical URL features
-- **Input**: URL string → feature vector [57 floats]
+- **Classifier**: HistGradientBoostingClassifier (400 iterations)
+- **ONNX proxy**: RandomForestClassifier (400 trees) for browser inference
+- **Features**: 77 lexical URL features
+- **Input**: URL string → feature vector [77 floats]
 - **Output**: Phishing probability [0, 1]
 
 To retrain and export:
