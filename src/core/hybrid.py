@@ -13,12 +13,15 @@ Implements the three-stage routing described in the project architecture:
 
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass, field
 from typing import Optional
 from urllib.parse import urlparse
 
 from .config import DEFAULT_CONFIG, HybridConfig
+
+logger = logging.getLogger("phishguard.hybrid")
 
 from ..lexical.features import (
     KNOWN_BRANDS, KNOWN_LEGITIMATE_DOMAINS, PHISH_COMBINATION_WORDS,
@@ -153,9 +156,11 @@ def analyze(url: str,
             vision_model: Optional[VisionModel] = None,
             run_vision: bool = True) -> AnalysisResult:
     """Run the full hybrid pipeline on a single URL."""
+    logger.debug("Analyzing URL: %s", url)
 
     # Stage 0: Whitelist fast-path (most reliable signal)
     if _check_whitelist(url):
+        logger.debug("Whitelist match for %s -> Safe", url)
         return AnalysisResult(
             url=url, verdict="Safe", risk=0.0, fast_path=True,
             notes=["Domain is in known legitimate whitelist -> Safe."])
@@ -163,6 +168,7 @@ def analyze(url: str,
     # Stage 0.5: Rule-based check (catches patterns ML might miss)
     rule_score, rule_reason = _rule_based_check(url)
     if rule_score >= 0.5:
+        logger.info("Rule-based phishing detected for %s: %s", url, rule_reason)
         return AnalysisResult(
             url=url, verdict="Phishing", risk=rule_score, fast_path=True,
             notes=[f"Rule-based detection: {rule_reason}"])
@@ -178,14 +184,18 @@ def analyze(url: str,
 
     # Combine ML probability with rule-based score
     combined_risk = max(lex_prob, rule_score * 0.8)
+    logger.debug("Lexical prob=%.3f, rule=%.2f, combined=%.3f",
+                 lex_prob, rule_score, combined_risk)
 
     # Fast-path: lexical confidence is extreme -> no network capture needed.
     if combined_risk <= cfg.fast_path_safe:
+        logger.debug("Safe fast-path for %s (risk=%.3f)", url, combined_risk)
         return AnalysisResult(
             url=url, verdict="Safe", risk=combined_risk,
             stage_scores=scores, fast_path=True,
             notes=["Combined score confident -> Safe fast-path (no capture)."])
     if combined_risk >= cfg.fast_path_malicious:
+        logger.info("Phishing fast-path for %s (risk=%.3f)", url, combined_risk)
         return AnalysisResult(
             url=url, verdict="Phishing", risk=combined_risk,
             stage_scores=scores, fast_path=True,
@@ -197,6 +207,7 @@ def analyze(url: str,
     screenshot = None
     notes: list[str] = []
     if run_vision and cfg.vision_trigger_lo <= combined_risk <= cfg.vision_trigger_hi:
+        logger.info("Ambiguous score %.3f for %s -> running vision stage", combined_risk, url)
         shot_path = capture(url, f"data/screenshots/_live/{_safe_name(url)}.png")
         if shot_path.ok:
             vis_prob, vis_used = vis_model.predict_proba(shot_path.image_path)
@@ -220,6 +231,7 @@ def analyze(url: str,
     verdict = _verdict_from_risk(risk, cfg)
     notes.append(f"ML prob={lex_prob:.3f}, rule score={rule_score:.2f}, "
                  f"fused risk={risk:.3f} -> {verdict}.")
+    logger.info("Verdict for %s: %s (risk=%.3f)", url, verdict, risk)
     return AnalysisResult(url=url, verdict=verdict, risk=risk,
                           stage_scores=scores, fast_path=False,
                           screenshot=screenshot, notes=notes)
