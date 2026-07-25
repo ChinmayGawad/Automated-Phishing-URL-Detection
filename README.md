@@ -70,7 +70,7 @@ The project includes **PhishGuard**, a real-time browser extension powered by on
 2. **Open Extensions page**: Open Chrome and navigate to `chrome://extensions/`.
 3. **Load Extension**: Enable **Developer mode** (top-right toggle), click **Load unpacked**, and select the **`extension/`** folder.
 
-📖 *For a detailed step-by-step guide with screenshots and edge browser instructions, see [EXTENSION_INSTALLATION.md](file:///d:/Automated%20Phishing%20URL%20Detection/EXTENSION_INSTALLATION.md).*
+📖 *For a detailed step-by-step guide with screenshots and edge browser instructions, see [EXTENSION_INSTALLATION.md](EXTENSION_INSTALLATION.md).*
 
 
 ## Pre-trained Models & Download
