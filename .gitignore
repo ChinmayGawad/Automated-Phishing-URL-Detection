@@ -27,8 +27,11 @@ dist/
 .eggs/
 
 # Model and data artifacts
-models/*.pt
-models/*.joblib
+# models/*.pt
+# models/*.joblib
+!models/lexical_rf.joblib
+!models/cnn_phish.pt
+!extension/models/lexical.onnx
 data/screenshots/_live/*
 data/screenshots/phish/*
 data/screenshots/legit/*
@@ -50,8 +53,8 @@ Thumbs.db
 # Logs
 *.log
 
-# ONNX model files (regenerate via build/export_model.py)
-*.onnx
+# ONNX model files (unignored specific production model above)
+# *.onnx
 
 # mimo
 .mimocode/

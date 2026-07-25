@@ -62,6 +62,38 @@ pip install -r requirements.txt
 playwright install chromium   # for the visual capture stage
 ```
 
+## Pre-trained Models & Download
+
+The project includes pre-trained model checkpoints ready for instant inference:
+
+| Model File | Stage | Description | Size | Tracking |
+|------------|-------|-------------|------|----------|
+| `models/lexical_rf.joblib` | Stage 1 (Lexical) | Random Forest lexical feature classifier | ~2.2 MB | Standard Git |
+| `models/cnn_phish.pt` | Stage 2 (Visual) | PyTorch CNN visual page classifier | ~98 MB | Git LFS |
+| `extension/models/lexical.onnx` | Extension | Quantized ONNX model for browser extension | ~170 KB | Git LFS |
+
+### Downloading via Git LFS
+
+Large model files (like `cnn_phish.pt`) are tracked using **Git LFS**. To fetch model weights after cloning:
+
+```bash
+# Install Git LFS (once per machine)
+git lfs install
+
+# Fetch and pull model weights
+git lfs pull
+```
+
+### Direct Download / GitHub Releases
+
+If downloading without Git LFS or using the models standalone, download the weights from GitHub Releases:
+- **Lexical Random Forest**: `models/lexical_rf.joblib`
+- **Visual CNN PyTorch Checkpoint**: `models/cnn_phish.pt`
+- **Browser Extension ONNX Model**: `extension/models/lexical.onnx` (export via `python build/export_model.py`)
+
+Place downloaded model files directly inside the `models/` folder.
+
+
 ## Data & Training
 
 The models are trained on genuine public datasets:
