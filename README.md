@@ -62,6 +62,17 @@ pip install -r requirements.txt
 playwright install chromium   # for the visual capture stage
 ```
 
+## 🧩 Chrome Extension Quick Start
+
+The project includes **PhishGuard**, a real-time browser extension powered by on-device machine learning:
+
+1. **Download the project**: Click **Code → Download ZIP** (or `git clone https://github.com/ChinmayGawad/Automated-Phishing-URL-Detection.git`).
+2. **Open Extensions page**: Open Chrome and navigate to `chrome://extensions/`.
+3. **Load Extension**: Enable **Developer mode** (top-right toggle), click **Load unpacked**, and select the **`extension/`** folder.
+
+📖 *For a detailed step-by-step guide with screenshots and edge browser instructions, see [EXTENSION_INSTALLATION.md](file:///d:/Automated%20Phishing%20URL%20Detection/EXTENSION_INSTALLATION.md).*
+
+
 ## Pre-trained Models & Download
 
 The project includes pre-trained model checkpoints ready for instant inference:

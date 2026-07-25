@@ -12,38 +12,25 @@ Real-time phishing URL detection powered by machine learning, running entirely i
 
 ## Installation
 
-### From Source (Developer Mode)
+### Quick Start (Pre-built Model Included)
 
-**Note:** The ONNX model file (`lexical.onnx`, ~177MB) is not included in the repository. You must generate it before loading the extension.
+The ONNX model (`extension/models/lexical.onnx`) is **pre-packaged in the repository**.
 
-1. Build the ONNX model:
-   ```bash
-   pip install skl2onnx onnx onnxruntime
-   python build/export_model.py
-   ```
+1. Download or clone this repository.
+2. Open Chrome and navigate to `chrome://extensions/`.
+3. Enable **Developer mode** (toggle in top-right).
+4. Click **Load unpacked** and select the `extension/` directory.
+5. The **PhishGuard** icon will appear in your toolbar!
 
-2. Download ONNX Runtime Web for the popup (required for full ML inference):
-   ```bash
-   # Download onnxruntime-web from npm or CDN
-   npm pack onnxruntime-web
-   tar -xzf onnxruntime-web-*.tgz
-   cp package/dist/ort.min.js extension/lib/
-   ```
+### Retraining & Exporting Model (Optional)
 
-3. Generate extension icons (requires Pillow):
-   ```bash
-   python build/generate_icons.py
-   ```
+If you modify the training code or features and want to re-export the ONNX model:
 
-4. Open Chrome and navigate to `chrome://extensions/`
+```bash
+pip install skl2onnx onnx onnxruntime
+python build/export_model.py
+```
 
-5. Enable "Developer mode" (toggle in top-right)
-
-6. Click "Load unpacked" and select the `extension/` directory
-
-7. The PhishGuard icon appears in your toolbar
-
-**Note:** The background service worker uses a built-in fallback predictor for real-time URL checking. The full ONNX model is used when analyzing URLs via the popup (toolbar icon click or manual input).
 
 ## How It Works
 
