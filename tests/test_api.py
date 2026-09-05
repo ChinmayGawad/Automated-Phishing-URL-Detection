@@ -22,6 +22,39 @@ def test_health(client: TestClient):
     assert data["status"] == "ok"
     assert data["model_loaded"] is True
     assert "version" in data
+    assert data["n_features"] > 0
+
+
+def test_analyze_validates_scheme(client: TestClient):
+    """Non-http schemes should be rejected."""
+    resp = client.post("/analyze", json={"url": "javascript:alert(1)"})
+    assert resp.status_code == 422
+    resp = client.post("/analyze", json={"url": "data:text/html,<script>"})
+    assert resp.status_code == 422
+
+
+def test_analyze_response_has_request_id(client: TestClient):
+    resp = client.post("/analyze", json={"url": "https://example.com"})
+    assert resp.status_code == 200
+    # Request ID is returned as a response header
+    assert "X-Request-Id" in resp.headers
+    assert resp.headers["X-Request-Id"] != ""
+
+
+def test_batch_request_id_present(client: TestClient):
+    resp = client.post("/analyze/batch", json={
+        "urls": ["https://www.google.com"]
+    })
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data["results"]) == 1
+    assert "request_id" in data["results"][0]
+    resp = client.get("/health")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["status"] == "ok"
+    assert data["model_loaded"] is True
+    assert "version" in data
 
 
 def test_analyze_safe_url(client: TestClient):

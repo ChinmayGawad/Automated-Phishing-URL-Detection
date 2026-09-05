@@ -97,16 +97,21 @@ def _build_model() -> HistGradientBoostingClassifier:
     )
 
 
-def _build_rf() -> RandomForestClassifier:
+def _build_rf(n_estimators: int = 400, compact: bool = False) -> RandomForestClassifier:
     """ONNX-friendly RandomForest.
 
     ``HistGradientBoosting`` does not export cleanly to ONNX in this toolchain,
     so the browser/extension artifact is built from an RF. It is nearly as
     accurate on this task and is the canonical skl2onnx export target.
+
+    When ``compact=True`` (default ``n_estimators=100``), the model trades a
+    small amount of AUC for a much smaller ONNX artifact — ideal for browser
+    extension distribution.
     """
+    min_leaf = 2 if not compact else 5
     return RandomForestClassifier(
-        n_estimators=400, max_depth=None, min_samples_split=5,
-        min_samples_leaf=2, max_features="sqrt",
+        n_estimators=n_estimators, max_depth=None, min_samples_split=5,
+        min_samples_leaf=min_leaf, max_features="sqrt",
         class_weight="balanced_subsample", n_jobs=-1, random_state=42,
     )
 
@@ -186,7 +191,8 @@ def train(csv_path: str | Path, model_path: str | Path = DEFAULT_MODEL_PATH,
     return metrics
 
 
-def export_onnx(csv_path: str | Path, onnx_path: str | Path = DEFAULT_ONNX_PATH) -> dict:
+def export_onnx(csv_path: str | Path, onnx_path: str | Path = DEFAULT_ONNX_PATH,
+                compact_trees: int | None = None) -> dict:
     """Train an ONNX-friendly RandomForest and export it for the browser/extension.
 
     ``HistGradientBoosting`` (the primary ``joblib`` model) does not export
@@ -194,6 +200,11 @@ def export_onnx(csv_path: str | Path, onnx_path: str | Path = DEFAULT_ONNX_PATH)
     RF trained on the same dataset. The two are within ~0.001 AUC of each other.
     The ONNX input tensor is ``[None, n_features]`` and the output is the
     phishing probability (class 1).
+
+    Set ``compact_trees`` to train a smaller RF with fewer trees (e.g. 100)
+    when the goal is a smaller extension artifact rather than maximum accuracy.
+    This is the recommended path for the Chrome extension; the default
+    (``None``) trains the full-size model used by the API.
     """
     from skl2onnx import convert_sklearn
     from skl2onnx.common.data_types import FloatTensorType
@@ -202,8 +213,10 @@ def export_onnx(csv_path: str | Path, onnx_path: str | Path = DEFAULT_ONNX_PATH)
     X = np.asarray(extract_batch(df["url"].tolist()), dtype=np.float32)
     y = df["label"].astype(int).to_numpy()
 
-    print(f"Training ONNX RandomForest on {len(X)} samples...")
-    rf = _build_rf()
+    compact = compact_trees is not None
+    n_trees = compact_trees or 400
+    print(f"Training ONNX {'compact' if compact else 'full'} RandomForest ({n_trees} trees) on {len(X)} samples...")
+    rf = _build_rf(n_estimators=n_trees, compact=compact)
     rf.fit(X, y)
 
     onnx_path = Path(onnx_path)
@@ -215,10 +228,34 @@ def export_onnx(csv_path: str | Path, onnx_path: str | Path = DEFAULT_ONNX_PATH)
         target_opset=17,
     )
     onx.ir_version = min(onx.ir_version, 9)
+    model_bytes = onx.SerializeToString()
     with open(onnx_path, "wb") as f:
-        f.write(onx.SerializeToString())
-    print(f"[done] Wrote ONNX model -> {onnx_path} (input dim {len(FEATURE_NAMES)})")
-    return {"onnx_path": str(onnx_path), "n_features": len(FEATURE_NAMES)}
+        f.write(model_bytes)
+
+    # Quantize if onnxruntime.quantization is available (reduces size ~4-10x)
+    try:
+        from onnxruntime.quantization import quantize_dynamic, QuantType
+        quantized_path = Path(str(onnx_path) + ".quantized")
+        quantize_dynamic(
+            model_input=str(onnx_path),
+            model_output=str(quantized_path),
+            weight_type=QuantType.QInt8,
+        )
+        if quantized_path.exists():
+            import os
+            quant_size = quantized_path.stat().st_size
+            orig_size = onnx_path.stat().st_size
+            print(f"Quantized: {quant_size/1024/1024:.1f} MB (was {orig_size/1024/1024:.1f} MB, "
+                  f"{quant_size/orig_size*100:.0f}% of original)")
+            # Replace with quantized version
+            onnx_path.unlink()
+            quantized_path.rename(onnx_path)
+    except ImportError:
+        print("[warn] onnxruntime.quantization not available, using non-quantized model")
+    except Exception as exc:
+        print(f"[warn] Quantization failed: {exc}, keeping non-quantized model")
+    print(f"[done] Wrote ONNX model -> {onnx_path} (input dim {len(FEATURE_NAMES)}, compact={compact})")
+    return {"onnx_path": str(onnx_path), "n_features": len(FEATURE_NAMES), "compact": compact}
 
 
 def _get_feature_importances(clf, X=None, y=None) -> dict[str, float]:
@@ -259,12 +296,14 @@ def main() -> None:
                     help="Path for the exported ONNX model (extension/browser)")
     ap.add_argument("--no-onnx", action="store_true",
                     help="Skip ONNX export (extension artifact)")
+    ap.add_argument("--onnx-trees", type=int, default=100,
+                    help="Number of trees in compact ONNX model (default: 100)")
     args = ap.parse_args()
     metrics = train(args.csv, args.model)
 
     if not args.no_onnx:
         try:
-            export_onnx(args.csv, args.onnx)
+            export_onnx(args.csv, args.onnx, compact_trees=args.onnx_trees)
         except Exception as exc:  # pragma: no cover - optional dependency
             print(f"[warn] ONNX export skipped: {exc}")
 

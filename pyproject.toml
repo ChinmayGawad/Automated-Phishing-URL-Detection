@@ -1,10 +1,12 @@
+# PyProject Configuration
+
 [build-system]
 requires = ["setuptools>=68.0", "wheel"]
 build-backend = "setuptools.backends._legacy:_Backend"
 
 [project]
 name = "phishguard"
-version = "1.0.0"
+version = "1.1.0"
 description = "Automated phishing URL detection using hybrid ML pipeline"
 requires-python = ">=3.10"
 dependencies = [
@@ -21,17 +23,54 @@ dependencies = [
     "fastapi>=0.104.0",
     "uvicorn[standard]>=0.24.0",
     "pydantic>=2.0",
+    "tldextract>=3.4",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=7.4",
+    "pytest-cov>=4.0",
+    "ruff>=0.1.0",
+    "mypy>=1.0",
+    "slowapi>=0.1",
 ]
 onnx = [
     "skl2onnx>=1.16",
     "onnx>=1.15",
     "onnxruntime>=1.16",
 ]
+api = [
+    "fastapi>=0.104.0",
+    "uvicorn[standard]>=0.24.0",
+    "slowapi>=0.1",
+]
 
-[tool.setuptools.packages.find]
-include = ["src*"]
+[project.scripts]
+phishguard-api = "src.api.server:main"
+phishguard-train = "src.lexical.train:main"
+phishguard-train-vision = "src.vision.train:main"
+phishguard-export = "build.export_model:main"
+phishguard-sim = "app.simulator:main"
+phishguard-constants = "scripts.gen_extension_constants:main"
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "B", "C4"]
+
+[tool.mypy]
+python_version = "3.10"
+ignore_missing_imports = true
+strict = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+markers = [
+    "vision: tests requiring vision model",
+    "slow: tests that take a long time",
+    "integration: integration tests",
+]
+addopts = "-v --tb=short"

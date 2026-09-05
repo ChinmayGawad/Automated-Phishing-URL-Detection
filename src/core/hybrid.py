@@ -25,9 +25,10 @@ logger = logging.getLogger("phishguard.hybrid")
 
 from ..lexical.features import (
     KNOWN_BRANDS, KNOWN_LEGITIMATE_DOMAINS, PHISH_COMBINATION_WORDS,
-    SHORTENER_DOMAINS, _levenshtein, _is_ip, _entropy,
+    SHORTENER_DOMAINS,
 )
 from ..lexical.model import LexicalModel
+from ..utils.url_parsing import registered_domain, normalize_idn
 from ..vision.capture import capture
 from ..vision.model import VisionModel
 
@@ -77,9 +78,17 @@ def _check_whitelist(url: str) -> bool:
         return True
 
     # Subdomain match (e.g. docs.google.com -> google.com)
-    for wl_domain in KNOWN_LEGITIMATE_DOMAINS:
-        if host == wl_domain or host.endswith("." + wl_domain):
-            return True
+    reg = registered_domain(host)
+    if reg in KNOWN_LEGITIMATE_DOMAINS:
+        return True
+
+    # Also check punycode-decoded form (catch homograph subdomains)
+    decoded = normalize_idn(host)
+    if decoded in KNOWN_LEGITIMATE_DOMAINS:
+        return True
+    decoded_reg = registered_domain(decoded)
+    if decoded_reg in KNOWN_LEGITIMATE_DOMAINS:
+        return True
 
     return False
 
@@ -97,53 +106,64 @@ def _rule_based_check(url: str) -> tuple[float, str]:
     except Exception:
         return 0.3, "Malformed URL"
 
-    domain = host.split(".")[-2] if host.count(".") >= 2 else host.split(".")[0]
+    domain = registered_domain(host).split(".")[0] if "." in registered_domain(host) else host.split(".")[0]
+    domain = domain or host
     suspicion = 0.0
     reasons = []
 
-    # Rule 1: Brand near-match (Levenshtein 1-2)
-    for brand in KNOWN_BRANDS:
-        dist = _levenshtein(domain, brand)
-        if 1 <= dist <= 2 and len(domain) >= 3:
-            suspicion += 0.6
-            reasons.append(f"Domain '{domain}' is {dist} edit(s) from brand '{brand}'")
+    # Decode IDN before brand matching
+    decoded_domain = normalize_idn(domain)
+
+    from ..lexical.features import _levenshtein
+
+    # Check both raw and decoded forms
+    for d in (domain, decoded_domain):
+        # Rule 1: Brand near-match (Levenshtein 1-2)
+        for brand in KNOWN_BRANDS:
+            dist = _levenshtein(d, brand)
+            if 1 <= dist <= 2 and len(d) >= 3:
+                suspicion += 0.6
+                reasons.append(f"Domain '{d}' is {dist} edit(s) from brand '{brand}'")
+                break
+
+        # Rule 2: Hyphenated brand impersonation
+        if "-" in d:
+            parts = d.split("-")
+            if len(parts) == 2:
+                for part in parts:
+                    for brand in KNOWN_BRANDS:
+                        if part == brand or _levenshtein(part, brand) <= 1:
+                            other = parts[1] if parts[0] in (brand,) else parts[0]
+                            if any(w in other or _levenshtein(other, w) <= 1
+                                   for w in PHISH_COMBINATION_WORDS[:15]):
+                                suspicion += 0.7
+                                reasons.append(f"Hyphenated brand impersonation: '{d}'")
+                                break
+                    if suspicion > 0.5:
+                        break
+
+        # Rule 3: Suspicious prefix/suffix with brand
+        for word in PHISH_COMBINATION_WORDS[:12]:
+            if d.startswith(word + "-") or d.startswith(word + "."):
+                rest = d[len(word) + 1:]
+                for brand in KNOWN_BRANDS:
+                    if brand in rest or _levenshtein(rest, brand) <= 1:
+                        suspicion += 0.6
+                        reasons.append(f"Suspicious prefix '{word}' with brand in '{d}'")
+                        break
+            if d.endswith("-" + word) or d.endswith("." + word):
+                rest = d[:-(len(word) + 1)]
+                for brand in KNOWN_BRANDS:
+                    if brand in rest or _levenshtein(rest, brand) <= 1:
+                        suspicion += 0.6
+                        reasons.append(f"Suspicious suffix '-{word}' with brand in '{d}'")
+                        break
+        if suspicion >= 0.5:
             break
 
-    # Rule 2: Hyphenated brand impersonation
-    if "-" in domain:
-        parts = domain.split("-")
-        if len(parts) == 2:
-            for part in parts:
-                for brand in KNOWN_BRANDS:
-                    if part == brand or _levenshtein(part, brand) <= 1:
-                        other = parts[1] if parts[0] in (brand,) else parts[0]
-                        if any(w in other or _levenshtein(other, w) <= 1
-                               for w in PHISH_COMBINATION_WORDS[:15]):
-                            suspicion += 0.7
-                            reasons.append(f"Hyphenated brand impersonation: '{domain}'")
-                            break
-                if suspicion > 0.5:
-                    break
-
-    # Rule 3: Suspicious prefix/suffix with brand
-    for word in PHISH_COMBINATION_WORDS[:12]:
-        if domain.startswith(word + "-") or domain.startswith(word + "."):
-            rest = domain[len(word) + 1:]
-            for brand in KNOWN_BRANDS:
-                if brand in rest or _levenshtein(rest, brand) <= 1:
-                    suspicion += 0.6
-                    reasons.append(f"Suspicious prefix '{word}' with brand in '{domain}'")
-                    break
-        if domain.endswith("-" + word) or domain.endswith("." + word):
-            rest = domain[:-(len(word) + 1)]
-            for brand in KNOWN_BRANDS:
-                if brand in rest or _levenshtein(rest, brand) <= 1:
-                    suspicion += 0.6
-                    reasons.append(f"Suspicious suffix '-{word}' with brand in '{domain}'")
-                    break
-
-    # Rule 4: IP address as host
-    if _is_ip(host):
+    # Rule 4: IP address as host (IPv4 + IPv6)
+    from ..utils.url_parsing import is_ip
+    if is_ip(host):
         suspicion += 0.5
         reasons.append("IP address used as hostname")
 

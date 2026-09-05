@@ -2,11 +2,23 @@
 
 from __future__ import annotations
 
+import pytest
+
 from src.lexical.features import extract_features, FEATURE_NAMES
 from src.core.config import HybridConfig
 from src.core.hybrid import analyze
 from src.lexical.model import LexicalModel
 from src.vision.model import VisionModel
+
+
+def test_onnx_export_size_gate():
+    """ONNX extension model must be under 5 MB to ship in the Chrome extension."""
+    from pathlib import Path
+    onnx_path = Path(__file__).resolve().parents[1] / "extension" / "models" / "lexical.onnx"
+    if not onnx_path.exists():
+        pytest.skip("ONNX model not present")
+    size_mb = onnx_path.stat().st_size / (1024 * 1024)
+    assert size_mb < 5.0, f"ONNX model too large: {size_mb:.1f} MB"
 
 
 def test_feature_vector_length_and_order():

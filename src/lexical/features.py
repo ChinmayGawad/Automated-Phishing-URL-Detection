@@ -28,6 +28,7 @@ SUSPICIOUS_KEYWORDS = (
 # Import shared constants from the centralized module.
 from ..utils.constants import KNOWN_BRANDS, SUSPICIOUS_TLDS, TRUSTED_TLDS
 from ..utils.constants import FREE_HOSTING, SHORTENER_DOMAINS, PHISH_WORDS
+from ..utils.url_parsing import is_ip, registered_domain, tld_of, normalize_idn
 
 # Feature names, in a stable order. Used by both training and inference.
 FEATURE_NAMES = [
@@ -279,6 +280,13 @@ KNOWN_LEGITIMATE_DOMAINS = frozenset({
     "umich.edu", "uw.edu", "ucla.edu", "utexas.edu", "gatech.edu",
     # Personal / project GitHub Pages (legit developer portfolios)
     "chinmaygawad.github.io",
+    # Free hosting platforms (common phishing vectors but also legitimate)
+    "pages.dev",
+    "vercel.app",
+    "netlify.app",
+    "github.io",
+    # Signal secure messaging
+    "signal.org",
 })
 
 
@@ -306,9 +314,8 @@ def _entropy(s: str) -> float:
 
 
 def _is_ip(host: str) -> bool:
-    if not host:
-        return False
-    return bool(re.fullmatch(r"\d{1,3}(\.\d{1,3}){3}", host))
+    """Legacy IPv4-only check for backward compatibility. Prefer is_ip() from utils."""
+    return is_ip(host)
 
 
 def _levenshtein(a: str, b: str) -> int:
@@ -358,17 +365,15 @@ def _extract_features_impl(raw: str) -> LexicalFeatures:
     lower = raw.lower()
     keyword_count = sum(1 for kw in SUSPICIOUS_KEYWORDS if kw in lower)
 
-    subdomains = 0
-    if host_no_port:
-        parts = host_no_port.split(".")
-        if len(parts) > 2 or (len(parts) == 2 and _is_ip(host_no_port)):
-            subdomains = max(0, len(parts) - 2)
+    # Public helpers for correct IP detection (IPv4+IPv6), TLD, and registered domain
+    reg_domain = registered_domain(host_no_port)
+    tld = tld_of(host_no_port)
+    subdomains = max(0, len(host_no_port.split(".")) - 2) if "." in host_no_port else 0
+    # domain_base is the registrable domain without TLD (for brand matching)
+    domain_base = reg_domain.rsplit(".", 1)[0] if "." in reg_domain else reg_domain
 
-    tld = ""
-    if host_no_port and "." in host_no_port and not _is_ip(host_no_port):
-        tld = host_no_port.rsplit(".", 1)[-1]
-
-    domain_for_entropy = host_no_port.rsplit(".", 1)[0] if "." in host_no_port else host_no_port
+    # IDN-decoded form for brand/Levenshtein matching
+    decoded_domain_base = normalize_idn(domain_base)
 
     # --- v2 features ---
     # digit ratio in full URL
@@ -379,7 +384,8 @@ def _extract_features_impl(raw: str) -> LexicalFeatures:
     hex_encoded = len(re.findall(r"%[0-9a-fA-F]{2}", raw))
 
     # brand name in domain (typosquatting detector)
-    domain_base = domain_for_entropy.lower()
+    # domain_base is already set as the registrable domain without TLD
+    domain_for_entropy = reg_domain.lower() if reg_domain else host_no_port
 
     # --- single pass over brands: compute every brand-derived signal at once
     # to avoid repeated O(brands) Levenshtein scans (a major perf hotspot). ---
@@ -436,7 +442,7 @@ def _extract_features_impl(raw: str) -> LexicalFeatures:
     has_encoded = float("%" in raw or "&amp;" in raw.lower())
 
     # digits inside the domain name itself
-    domain_digits = sum(c.isdigit() for c in domain_base)
+    domain_digits = sum(c.isdigit() for c in domain_base) if domain_base else 0
 
     # hyphens in hostname (phishing uses hyphens to break up brand names)
     hostname_hyphens = host_no_port.count("-")
@@ -556,11 +562,8 @@ def _extract_features_impl(raw: str) -> LexicalFeatures:
     is_known_legit = 0.0
     if host_no_port in KNOWN_LEGITIMATE_DOMAINS:
         is_known_legit = 1.0
-    elif "." in host_no_port and not _is_ip(host_no_port):
-        # Check registered domain (domain.tld) without subdomains
-        reg_check = domain_for_entropy + ("." + tld if tld else "")
-        if reg_check in KNOWN_LEGITIMATE_DOMAINS:
-            is_known_legit = 1.0
+    elif reg_domain in KNOWN_LEGITIMATE_DOMAINS:
+        is_known_legit = 1.0
 
     # Domain name substring match in whitelist (catches subdomains like
     # app.bankofamerica.com, mail.google.com, etc.)
@@ -629,7 +632,7 @@ def _extract_features_impl(raw: str) -> LexicalFeatures:
     # shortener or legitimate site — often suspicious
     short_unknown = 0.0
     if len(domain_base) < 12 and not host_no_port in SHORTENER_DOMAINS and \
-       is_known_legit == 0.0 and not _is_ip(host_no_port):
+       is_known_legit == 0.0 and not is_ip(host_no_port):
         # Additional check: low vowel ratio or high entropy suggests random name
         if vowel_ratio < 0.3 or _entropy(domain_for_entropy) > 3.0:
             short_unknown = 1.0
@@ -710,7 +713,7 @@ def _extract_features_impl(raw: str) -> LexicalFeatures:
         "num_percent": raw.count("%"),
         "num_digits": digit_count,
         "num_subdomains": subdomains,
-        "has_ip_host": float(_is_ip(host_no_port)),
+        "has_ip_host": float(is_ip(host_no_port)),
         "has_https": float(parsed.scheme == "https"),
         "has_port": float(":" in host),
         "suspicious_keyword_count": keyword_count,

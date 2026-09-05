@@ -1,0 +1,15 @@
+{
+  "model_type": "resnet18_transfer_learning",
+  "config": {
+    "epochs": 10,
+    "batch_size": 32,
+    "lr": 0.001,
+    "freeze_early": true
+  },
+  "metrics": {},
+  "n_features": null,
+  "image_size": 224,
+  "dataset_path": "data/screenshots",
+  "trained_at": "2026-01-01T00:00:00",
+  "notes": "Placeholder metadata. Retrain with `python -m src.vision.train` to generate real metrics."
+}

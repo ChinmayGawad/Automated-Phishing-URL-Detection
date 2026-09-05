@@ -29,9 +29,10 @@ impersonation engine, fused by a configurable **hybrid decision core**.
 ```
 
 * **Stage 1 — Lexical Engine** (`src/lexical`): parses the URL with no network
-  request and extracts 20+ numerical features (length metrics, delimiter
-  counts, IP-as-host, subdomain count, suspicious keywords). A trained
-  `RandomForestClassifier` produces a fast phishing probability.
+  request and extracts ~90 numerical features (length metrics, delimiter
+  counts, IP-as-host, subdomain count, suspicious keywords, brand impersonation
+  detection, free-hosting patterns). A trained `HistGradientBoostingClassifier`
+  produces a fast phishing probability with ~0.997 AUC.
 * **Stage 2 — Visual Engine** (`src/vision`): if the lexical score is
   ambiguous, a headless Chromium (Playwright) captures a viewport screenshot in
   an isolated context, which a CNN classifies as phishing/legitimate.
@@ -60,6 +61,7 @@ python -m venv .venv
 .venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 playwright install chromium   # for the visual capture stage
+pip install -e ".[dev]"     # development tools: pytest, ruff, mypy
 ```
 
 ## 🧩 Chrome Extension Quick Start
@@ -73,15 +75,33 @@ The project includes **PhishGuard**, a real-time browser extension powered by on
 📖 *For a detailed step-by-step guide with screenshots and edge browser instructions, see [EXTENSION_INSTALLATION.md](EXTENSION_INSTALLATION.md).*
 
 
+## API Security
+
+The API supports authentication and rate limiting via environment variables:
+
+```bash
+# Require API key for all requests
+PHISHGUARD_API_KEYS=key1,key2 uvicorn src.api.server:app --port 8000
+
+# Rate limit: 100 requests per minute per IP
+PHISHGUARD_RATE_LIMIT="100/minute" uvicorn src.api.server:app --port 8000
+
+# Restrict CORS origins
+PHISHGUARD_CORS_ORIGINS=http://localhost:8501,https://example.com uvicorn ...
+```
+
+For production safety notes, see [SECURITY.md](SECURITY.md).
+
 ## Pre-trained Models & Download
 
 The project includes pre-trained model checkpoints ready for instant inference:
 
 | Model File | Stage | Description | Size | Tracking |
 |------------|-------|-------------|------|----------|
-| `models/lexical_rf.joblib` | Stage 1 (Lexical) | Random Forest lexical feature classifier | ~2.2 MB | Standard Git |
-| `models/cnn_phish.pt` | Stage 2 (Visual) | PyTorch CNN visual page classifier | ~98 MB | Git LFS |
-| `extension/models/lexical.onnx` | Extension | Quantized ONNX model for browser extension | ~170 KB | Git LFS |
+| `models/lexical_rf.joblib` | Stage 1 (Lexical) | HistGradientBoosting lexical classifier | ~2.2 MB | Standard Git |
+| `models/cnn_phish.pt` | Stage 2 (Visual) | PyTorch ResNet18 visual page classifier | ~44 MB | Git LFS |
+| `models/cnn_phish_metadata.json` | Stage 2 | Training metrics and provenance | ~1 KB | Standard Git |
+| `extension/models/lexical.onnx` | Extension | Compact ONNX model (50 trees) | ~4.6 MB | Standard Git |
 
 ### Downloading via Git LFS
 
@@ -152,8 +172,14 @@ result = analyze("http://micr0soft-secure-login.com/verify")
 print(result.verdict, result.risk, result.stage_scores)
 ```
 
-## Notes on Safety
+## Safety & Security
 
-The visual capture stage visits untrusted URLs. Always run it inside an
-isolated, network-restricted sandbox or container (see README note in
-`src/vision/capture.py`). Do not visit URLs on a production host.
+**The visual capture stage visits untrusted URLs.** Always run it inside an
+isolated, network-restricted sandbox or container. See [SECURITY.md](SECURITY.md)
+for detailed safety guidelines.
+
+Key principles:
+- Use `PHISH_CAPTURE=1` only in sandboxed environments
+- Never expose capture endpoints to the internet
+- Rate limit and authenticate API requests in production
+- Monitor for unusual traffic patterns
